@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 import re
 import time
 from collections.abc import Generator
@@ -28,7 +30,6 @@ from dify_plugin.interfaces.agent import AgentModelConfig, AgentStrategy, ToolEn
 from pydantic import BaseModel
 
 from utils.mcp_client import McpClients
-
 
 class FunctionCallingParams(BaseModel):
     query: str
@@ -73,7 +74,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
 
         # convert tool messages
         tools = fc_params.tools
-        tool_instances = {tool.identity.name: tool for tool in tools} if tools else {}
+        tool_instances = {
+            tool.identity.name: tool for tool in tools} if tools else {}
 
         # Fetch MCP tools
         mcp_clients = None
@@ -82,13 +84,16 @@ class FunctionCallingAgentStrategy(AgentStrategy):
         servers_config_json = fc_params.mcp_servers_config
         if servers_config_json:
             try:
-                servers_config_json = re.sub(r"(?<!\\)'", '"', servers_config_json)
+                servers_config_json = re.sub(
+                    r"(?<!\\)'", '"', servers_config_json)
                 servers_config = json.loads(servers_config_json)
             except json.JSONDecodeError as e:
-                raise ValueError(f"mcp_servers_config must be a valid JSON string: {e}")
+                raise ValueError(
+                    f"mcp_servers_config must be a valid JSON string: {e}")
             mcp_clients = McpClients(servers_config)
             mcp_tools = mcp_clients.fetch_tools()
-            mcp_tool_instances = {tool.get("name"): tool for tool in mcp_tools} if mcp_tools else {}
+            mcp_tool_instances = {
+                tool.get("name"): tool for tool in mcp_tools} if mcp_tools else {}
 
         # convert tools into ModelRuntime Tool format
         prompt_messages_tools = self._init_prompt_tools(tools)
@@ -101,7 +106,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
             else False
         )
         model = fc_params.model
-        stop = fc_params.model.completion_params.get("stop", []) if fc_params.model.completion_params else []
+        stop = fc_params.model.completion_params.get(
+            "stop", []) if fc_params.model.completion_params else []
 
         # init function calling state
         iteration_step = 1
@@ -136,7 +142,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                 current_thoughts=current_thoughts,
             )
             if model.entity and model.completion_params:
-                self.recalc_llm_max_tokens(model.entity, prompt_messages, model.completion_params)
+                self.recalc_llm_max_tokens(
+                    model.entity, prompt_messages, model.completion_params)
             # invoke model
             model_started_at = time.perf_counter()
             model_log = self.create_log_message(
@@ -159,6 +166,11 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                 tools=prompt_messages_tools,
             )
 
+            """
+            
+
+            
+            """
             tool_calls: list[tuple[str, str, dict[str, Any]]] = []
 
             # save full response
@@ -175,7 +187,9 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                     if self.check_tool_calls(chunk):
                         function_call_state = True
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
-                        tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                        print("[invoked] tool_calls: {}".format(tool_calls))
+                        tool_call_names = ";".join(
+                            [tool_call[1] for tool_call in tool_calls])
 
                     if chunk.delta.message and chunk.delta.message.content:
                         if isinstance(chunk.delta.message.content, list):
@@ -198,8 +212,11 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                 # check if there is any tool call
                 if self.check_blocking_tool_calls(result):
                     function_call_state = True
-                    tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
-                    tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                    tool_calls.extend(
+                        self.extract_blocking_tool_calls(result) or [])
+                    print("[else invoked] tool_calls: {}".format(tool_calls))
+                    tool_call_names = ";".join(
+                        [tool_call[1] for tool_call in tool_calls])
 
                 if result.usage:
                     self.increase_usage(llm_usage, result.usage)
@@ -237,7 +254,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                     LogMetadata.TOTAL_TOKENS: current_llm_usage.total_tokens if current_llm_usage else 0,
                 },
             )
-            assistant_message = AssistantPromptMessage(content="", tool_calls=[])
+            assistant_message = AssistantPromptMessage(
+                content="", tool_calls=[])
             if tool_calls:
                 assistant_message.tool_calls = [
                     AssistantPromptMessage.ToolCall(
@@ -245,7 +263,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                         type="function",
                         function=AssistantPromptMessage.ToolCall.ToolCallFunction(
                             name=tool_call[1],
-                            arguments=json.dumps(tool_call[2], ensure_ascii=False),
+                            arguments=json.dumps(
+                                tool_call[2], ensure_ascii=False),
                         ),
                     )
                     for tool_call in tool_calls
@@ -295,9 +314,11 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                             )
                         else:
                             # invoke tool
-                            tool_invoke_parameters = {**tool_instance.runtime_parameters, **tool_call_args}
+                            tool_invoke_parameters = {
+                                **tool_instance.runtime_parameters, **tool_call_args}
                             tool_invoke_responses = self.session.tool.invoke(
-                                provider_type=ToolProviderType(tool_instance.provider_type),
+                                provider_type=ToolProviderType(
+                                    tool_instance.provider_type),
                                 provider=tool_instance.identity.provider,
                                 tool_name=tool_instance.identity.name,
                                 parameters=tool_invoke_parameters,
@@ -305,23 +326,25 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                             result = ""
                             for response in tool_invoke_responses:
                                 if response.type == ToolInvokeMessage.MessageType.TEXT:
-                                    result += cast(ToolInvokeMessage.TextMessage, response.message).text
+                                    result += cast(ToolInvokeMessage.TextMessage,
+                                                   response.message).text
                                 elif response.type == ToolInvokeMessage.MessageType.LINK:
                                     result += (
-                                            f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}."
-                                            + " please tell user to check it."
+                                        f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}."
+                                        + " please tell user to check it."
                                     )
                                 elif response.type in {
                                     ToolInvokeMessage.MessageType.IMAGE_LINK,
                                     ToolInvokeMessage.MessageType.IMAGE,
                                 }:
                                     result += (
-                                            "image has been created and sent to user already, "
-                                            + "you do not need to create it, just tell the user to check it now."
+                                        "image has been created and sent to user already, "
+                                        + "you do not need to create it, just tell the user to check it now."
                                     )
                                 elif response.type == ToolInvokeMessage.MessageType.JSON:
                                     text = json.dumps(
-                                        cast(ToolInvokeMessage.JsonMessage, response.message).json_object,
+                                        cast(ToolInvokeMessage.JsonMessage,
+                                             response.message).json_object,
                                         ensure_ascii=False,
                                     )
                                     result += f"tool response: {text}."
@@ -361,7 +384,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
             # update prompt tool
             for prompt_tool in prompt_messages_tools:
                 if prompt_tool.name in tool_instances:
-                    self.update_prompt_message_tool(tool_instances[prompt_tool.name], prompt_tool)
+                    self.update_prompt_message_tool(
+                        tool_instances[prompt_tool.name], prompt_tool)
             yield self.finish_log_message(
                 log=round_log,
                 data={
@@ -442,14 +466,64 @@ class FunctionCallingAgentStrategy(AgentStrategy):
             args = {}
             if prompt_message.function.arguments != "":
                 args = json.loads(prompt_message.function.arguments)
+                """
+                Synopsis:
 
-            tool_calls.append(
-                (
-                    prompt_message.id,
-                    prompt_message.function.name,
-                    args,
+                Here it will get the model ouput json tool objects.
+                Since we only feed "mcp_sse_tool_call" function to the dify agent,
+                so it "only" has "mcp_sse_tool_call" function.
+
+                Something the LLM use the actual function name it got from the mcp
+                server to call the tool, but like stated above, the agent only know
+                "mcp_sse_tool_call".
+
+                So, in order to currectly the functions/tools, we have to replace the 
+                "tool_call_name" to "mcp_sse_tool_call".
+
+                Example correct tool call:
+                [('mcp_sse_call_tool', 'mcp_sse_call_tool', {'arguments': {'whichCompany': '五洲公司', 'whichYear': '2020'}, 'tool_name': 'readCompanyBusinessRevenue'})]
+                
+                Example incorrect tool call:
+                [('readCompanyBusinessRevenue', 'readCompanyBusinessRevenue', {'whichCompany': '五洲公司', 'whichYear': '2020'})]
+
+                Convert that to:
+                [('mcp_sse_call_tool', 'mcp_sse_call_tool', {'whichCompany': '五洲公司', 'whichYear': '2020'}, 'tool_name': 'readCompanyBusinessRevenue')]
+
+                #####################################
+                Correct format:
+                prompt_message.id: mcp_sse_call_tool
+                prompt_message_function_name: mcp_sse_call_tool
+                prompt_args: {'arguments': '{"order": "random", "sort": "asc", "limit": "5"}', 'tool_name': 'get-music'}
+                """
+                print(f"og_prompt_message: {prompt_message.id}")
+                print(
+                    f"og_prompt_message_function_name: {prompt_message.function.name}")
+                print(f"og_prompt_args: {args}")
+
+            if prompt_message.id != 'mcp_sse_call_tool':
+                print(f"\n********* CALL TOOL ADJUSTED *********")
+                args = {'arguments': args, 'tool_name': prompt_message.id}
+                print(f"adjusted_prompt_message: {prompt_message.id}")
+                print(
+                    f"adjusted_prompt_message_prompt_message_function_name: {prompt_message.function.name}")
+                print(f"adjusted_prompt_message_prompt_args: {args}\n")
+
+                tool_calls.append(
+                    (
+                        'mcp_sse_call_tool',
+                        'mcp_sse_call_tool',
+                        args,
+                    )
                 )
-            )
+            else:
+                print("No need to adjust")
+                tool_calls.append(
+                    (
+                        prompt_message.id,
+                        prompt_message.function.name,
+                        args,
+                    )
+                )
 
         return tool_calls
 
@@ -463,7 +537,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
             ]
 
         if prompt_messages and not isinstance(prompt_messages[0], SystemPromptMessage) and prompt_template:
-            prompt_messages.insert(0, SystemPromptMessage(content=prompt_template))
+            prompt_messages.insert(
+                0, SystemPromptMessage(content=prompt_template))
 
         return prompt_messages or []
 
@@ -500,7 +575,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
         ]
         if len(current_thoughts) != 0:
             # clear messages after the first iteration
-            prompt_messages = self._clear_user_prompt_image_messages(prompt_messages)
+            prompt_messages = self._clear_user_prompt_image_messages(
+                prompt_messages)
         return prompt_messages
 
     @staticmethod
