@@ -318,7 +318,7 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                             print(f"[invoke tool]tool_invoke_parameters_raw: {tool_call_args}")
                             tool_invoke_parameters = {
                                 **tool_instance.runtime_parameters, **tool_call_args}
-                            print(f"[invoke tool]tool_invoke_parameters: {tool_invoke_parameters}")
+                            print(f"[invoke tool]tool_invoke_parameters_raw: {tool_invoke_parameters}")
                             tool_invoke_responses = self.session.tool.invoke(
                                 provider_type=ToolProviderType(
                                     tool_instance.provider_type),
@@ -498,6 +498,7 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                 prompt_message_function_name: mcp_sse_call_tool
                 prompt_args: {'arguments': '{"order": "random", "sort": "asc", "limit": "5"}', 'tool_name': 'get-music'}
                 """
+                print("\n**************** NEW TOOL CALL RECEIVED ****************")
                 print(f"og_prompt_message: {prompt_message.id}")
                 print(
                     f"og_prompt_message_function_name: {prompt_message.function.name}")
@@ -515,7 +516,8 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                 print(f"adjusted_prompt_message: {prompt_message.id}")
                 print(
                     f"adjusted_prompt_message_prompt_message_function_name: {prompt_message.function.name}")
-                print(f"adjusted_prompt_message_prompt_args: {args}\n")
+                print(f"adjusted_prompt_message_prompt_args: {args}")
+                print("**************** NEW TOOL CALL ENDED ****************\n")
 
                 tool_calls.append(
                     (
