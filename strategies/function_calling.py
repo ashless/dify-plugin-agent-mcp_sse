@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from utils.mcp_client import McpClients
 
+
 class FunctionCallingParams(BaseModel):
     query: str
     instruction: str | None
@@ -188,6 +189,7 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                         function_call_state = True
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
                         print("[invoked] tool_calls: {}".format(tool_calls))
+                        # TODO - fix tool call funtion name and args
                         tool_call_names = ";".join(
                             [tool_call[1] for tool_call in tool_calls])
 
@@ -308,17 +310,20 @@ class FunctionCallingAgentStrategy(AgentStrategy):
                         if mcp_tool_instance:
                             # invoke MCP tool
                             tool_invoke_parameters = tool_call_args
-                            print(f"[invoke MCP tool]tool_invoke_parameters: {tool_invoke_parameters}")
+                            print(
+                                f"[invoke MCP tool]tool_invoke_parameters: {tool_invoke_parameters}")
                             result = mcp_clients.execute_tool(
                                 tool_name=tool_call_name,
                                 tool_args=tool_invoke_parameters,
                             )
                         else:
                             # invoke tool
-                            print(f"[invoke tool]tool_invoke_parameters_raw: {tool_call_args}")
+                            print(
+                                f"[invoke tool]tool_invoke_parameters_raw: {tool_call_args}")
                             tool_invoke_parameters = {
                                 **tool_instance.runtime_parameters, **tool_call_args}
-                            print(f"[invoke tool]tool_invoke_parameters_raw: {tool_invoke_parameters}")
+                            print(
+                                f"[invoke tool]tool_invoke_parameters_raw: {tool_invoke_parameters}")
                             tool_invoke_responses = self.session.tool.invoke(
                                 provider_type=ToolProviderType(
                                     tool_instance.provider_type),
@@ -443,17 +448,61 @@ class FunctionCallingAgentStrategy(AgentStrategy):
         """
         tool_calls = []
         for prompt_message in llm_result_chunk.delta.message.tool_calls:
-            args = {}
+            og_args = {}
+            print(f"[raw] prompt_message.function: {prompt_message.function.arguments}")
             if prompt_message.function.arguments != "":
-                args = json.loads(prompt_message.function.arguments)
+                og_args = json.loads(prompt_message.function.arguments)
 
-            tool_calls.append(
-                (
-                    prompt_message.id,
-                    prompt_message.function.name,
-                    args,
+            print("\n[raw] **************** NEW TOOL CALL RECEIVED ****************")
+            print(f"[raw] og_prompt_message: {prompt_message.id}")
+            print(
+                f"[raw] og_prompt_message_function_name: {prompt_message.function.name}")
+            print(f"[raw] og_prompt_args: {og_args}")
+
+            # TODO - fix tool call args and name here
+            print(f"[raw] prompt_message.id {prompt_message.id}")
+            print(
+                f"[raw] prompt_message.function.name: {prompt_message.function.name}")
+
+            if (prompt_message.id == 'mcp_sse_list_tools'):
+                tool_calls.append(
+                    (
+                        prompt_message.id,
+                        prompt_message.function.name,
+                        og_args,
+                    )
                 )
-            )
+            elif (prompt_message.id != 'mcp_sse_call_tool' or prompt_message.function.name != 'mcp_sse_call_tool'):
+                args = {}
+                if og_args.get("arguments") is None:
+                    args["arguments"] = {k: str(v) if isinstance(
+                        v, int) else v for k, v in og_args.items()}
+                
+                if og_args.get("tool_name") is None:
+                    args["tool_name"] = prompt_message.id
+                
+                print(f"\n[raw] ********* CALL TOOL ADJUSTED *********")
+                print(f"[raw] adjusted_prompt_message: {prompt_message.id}")
+                print(
+                    f"[raw] adjusted_prompt_message_prompt_message_function_name: {prompt_message.function.name}")
+                print(f"[raw] adjusted_prompt_message_prompt_args: {args}")
+                print("[raw] **************** NEW TOOL CALL ENDED ****************\n")
+
+                tool_calls.append(
+                    (
+                        "mcp_sse_call_tool",
+                        "mcp_sse_call_tool",
+                        args,
+                    )
+                )
+            else:
+                tool_calls.append(
+                    (
+                        prompt_message.id,
+                        prompt_message.function.name,
+                        og_args,
+                    )
+                )
 
         return tool_calls
 
@@ -506,9 +555,10 @@ class FunctionCallingAgentStrategy(AgentStrategy):
             args = {}
             if prompt_message.id != 'mcp_sse_call_tool':
                 print(f"\n********* CALL TOOL ADJUSTED *********")
-                # If args already contain "arguments" then skip adding it 
+                # If args already contain "arguments" then skip adding it
                 if og_args.get("arguments") is None:
-                    args["arguments"] = {k: str(v) if isinstance(v, int) else v for k, v in og_args.items()}
+                    args["arguments"] = {k: str(v) if isinstance(
+                        v, int) else v for k, v in og_args.items()}
 
                 if args.get("tool_name") is None:
                     args["tool_name"] = prompt_message.id
